@@ -1,0 +1,52 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=index    ### Job Name
+#SBATCH --time=10:00:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0           ### Array index
+#SBATCH --cpus-per-task=1            ### Number of CPU cores per task	
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+module load bwa samtools
+
+
+
+mkdir -p ../ref
+cd ../ref
+
+
+#wget ftp://ftp.wormbase.org/pub/wormbase/species/c_elegans/PRJNA13758/sequence/genomic/c_elegans.PRJNA13758.WS280.genomic.fa.gz
+#wget ftp://ftp.wormbase.org/pub/wormbase/species/c_elegans/PRJNA13758/sequence/genomic/c_elegans.PRJNA13758.WS280.genomic_masked.fa.gz
+
+#wget ftp://ftp.wormbase.org/pub/wormbase/species/c_briggsae/sequence/genomic/c_briggsae.PRJNA10731.WS280.genomic.fa.gz
+#wget ftp://ftp.wormbase.org/pub/wormbase/species/c_briggsae/sequence/genomic/c_briggsae.PRJNA10731.WS280.genomic_masked.fa.gz
+
+
+#wget ftp://ftp.wormbase.org/pub/wormbase/species/c_tropicalis/PRJNA53597/sequence/genomic/c_tropicalis.PRJNA53597.WS280.genomic.fa.gz
+#wget ftp://ftp.wormbase.org/pub/wormbase/species/c_tropicalis/PRJNA53597/sequence/genomic/c_tropicalis.PRJNA53597.WS280.genomic_masked.fa.gz
+
+#gunzip *
+
+ref_CE="/projects/phillipslab/ateterina/CITP_pi/ref/c_elegans.PRJNA13758.WS280.genomic.fa"
+ref_CB="/projects/phillipslab/ateterina/CITP_pi/ref/c_briggsae.PRJNA10731.WS280.genomic.fa"
+ref_CT="/projects/phillipslab/ateterina/CITP_pi/ref/c_tropicalis.PRJNA53597.WS280.genomic.fa"
+
+#index the reference
+bwa index $ref_CE #only ones
+bwa index $ref_CB
+bwa index $ref_CT
+
+samtools faidx $ref_CE
+samtools faidx $ref_CB
+samtools faidx $ref_CT
+
+module load java
+picard="/projects/phillipslab/ateterina/scripts/picard/build/libs/picard.jar"
+java -jar $picard CreateSequenceDictionary R=$ref_CE O=${ref_CE/.fa/.dict}
+java -jar $picard CreateSequenceDictionary R=$ref_CB O=${ref_CB/.fa/.dict}
+java -jar $picard CreateSequenceDictionary R=$ref_CT O=${ref_CT/.fa/.dict}
+
+
+

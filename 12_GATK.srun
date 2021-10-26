@@ -1,0 +1,46 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=GATK    ### Job Name
+#SBATCH --time=240:00:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-19          ### Array index
+#SBATCH --cpus-per-task=1            ### Number of CPU cores per task
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+
+module load java easybuild GATK
+
+ref_CE="/projects/phillipslab/ateterina/CITP_pi/ref/c_elegans.PRJNA13758.WS280.genomic.fa"
+ref_CB="/projects/phillipslab/ateterina/CITP_pi/ref/c_briggsae.PRJNA10731.WS280.genomic.fa"
+ref_CT="/projects/phillipslab/ateterina/CITP_pi/ref/c_tropicalis.PRJNA53597.WS280.genomic.fa"
+
+GATK="/projects/phillipslab/ateterina/scripts/gatk-4.1.4.1/gatk"
+cd /projects/phillipslab/ateterina/CITP_pi/data/
+
+
+LISTFILES=(*f[ps]1.fastq)
+file0=${LISTFILES[$SLURM_ARRAY_TASK_ID]}
+file=${file0/_f[ps]1.fastq/.ded.bam}
+
+
+if [[ "$file" =~ "CE".* ]]; then
+
+	echo "C. elegans"
+	$GATK --java-options "-Xmx5g -Xms5g" HaplotypeCaller -R $ref_CE -I ${file}  -O ${file/.ded.bam/.raw.g.vcf} -ERC GVCF;
+
+elif [[ "$file" =~ "CB".* ]]; then
+
+	echo "C. briggsae"
+	    $GATK --java-options "-Xmx5g -Xms5g" HaplotypeCaller -R $ref_CB -I ${file}  -O ${file/.ded.bam/.raw.g.vcf} -ERC GVCF;
+
+else
+
+	    echo "C. tropicalis"
+		$GATK --java-options "-Xmx5g -Xms5g" HaplotypeCaller -R $ref_CT -I ${file}  -O ${file/.ded.bam/.raw.g.vcf} -ERC GVCF;
+
+
+fi
+
+

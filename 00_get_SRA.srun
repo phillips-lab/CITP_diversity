@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=sra    ### Job Name
+#SBATCH --time=10:00:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-44           ### Array index
+
+module load easybuild sratoolkit/2.8.2-1
+
+#45 files
+SRA=$(sed -n $((${SLURM_ARRAY_TASK_ID}+1))p CITP_SRA_list.txt)
+
+fastq-dump --split-files $SRA
+
+
+#Also 2 other starins ED3092 and PD1073:
+#wget https://gc3fstorage.uoregon.edu/HMWH2DRXY/5002/ED3092_S1_L001_R1_001.fastq.gz
+
+#wget https://gc3fstorage.uoregon.edu/HMWH2DRXY/5002/PD1073_S2_L001_R1_001.fastq.gz
+
+#They are going to be on SRA soon

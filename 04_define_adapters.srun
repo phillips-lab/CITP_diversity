@@ -1,0 +1,25 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=qc    ### Job Name
+#SBATCH --time=00:240:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0           ### Array index
+
+
+
+grep -c "CTGTCTCTTATA" *.fastq > nextera_CTDTCTCTTATA_samples.txt
+
+while IFS=":" read -r file count; do
+   
+	if (($count >= 300)); then
+	
+		name=${file/_[12].fastq/}
+		echo "Moving $name to ./nextera/";
+		mv ${name}*.fastq ./nextera/ 2> /dev/null
+	fi
+
+done < nextera_CTDTCTCTTATA_samples.txt
+
+

@@ -1,0 +1,25 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=trim    ### Job Name
+#SBATCH --time=00:240:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-1           ### Array index
+#SBATCH --cpus-per-task=4            ### Number of CPU cores per task
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+module load easybuild  icc/2017.1.132-GCC-6.3.0-2.27  impi/2017.1.132 skewer
+
+cd nextera/SE;
+LISTFILES=(*_001.fastq)
+file=${LISTFILES[$SLURM_ARRAY_TASK_ID]}
+
+skewer -x CTGTCTCTTATA -t 4 -l 36 -r 0.01 -d 0.01 -q 20 -o ${file/_001.fastq/.tr0} $file;
+
+skewer -x AGATCGGAAGAG -t 4 -q 20 -l 36 -d 0.1 -r 0.1 -o ${file/_001.fastq/.tr1} ${file/_001.fastq/.tr0-trimmed.fastq};
+
+mv ${file/_001.fastq/.tr1-trimmed.fastq} ${file/_S[12]_L001_R1_001.fastq/_fs1.fastq}
+
+
+

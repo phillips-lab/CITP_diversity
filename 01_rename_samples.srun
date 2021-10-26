@@ -1,0 +1,24 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=rename    ### Job Name
+#SBATCH --time=00:240:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0           ### Array index
+
+###################################################################
+# rename fastq files using a file with sample/isotype names #######
+###################################################################
+
+
+while read sample; do
+
+    IFS=' ' read -r sra name <<<"$sample";
+#	echo $sample
+    mv ${sra}_1.fastq ${name}_1.fastq;
+    mv ${sra}_2.fastq ${name}_2.fastq;
+    echo ${name}_1.fastq;
+    echo ${name}_2.fastq;
+
+done <  CITP_SRA_names.txt

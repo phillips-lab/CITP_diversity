@@ -1,0 +1,264 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=GATK    ### Job Name
+#SBATCH --time=240:00:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-2          ### Array index
+#SBATCH --cpus-per-task=1            ### Number of CPU cores per task
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+
+module load java easybuild GATK bedtools
+
+ref_CE="/projects/phillipslab/ateterina/CITP_pi/ref/c_elegans.PRJNA13758.WS280.genomic.fa"
+ref_CB="/projects/phillipslab/ateterina/CITP_pi/ref/c_briggsae.PRJNA10731.WS280.genomic.fa"
+ref_CT="/projects/phillipslab/ateterina/CITP_pi/ref/c_tropicalis.PRJNA53597.WS280.genomic.fa"
+
+GATK="/projects/phillipslab/ateterina/scripts/gatk-4.1.4.1/gatk"
+cd /projects/phillipslab/ateterina/CITP_pi/data/
+
+
+
+#consolidate variants from many samples
+LIST=(CE CB CT)
+SP=${LIST[$SLURM_ARRAY_TASK_ID]}
+
+samples=$(find . | sed 's/.\///' | grep -E "^${SP}.*g.vcf$" | sed 's/^/-V /')
+ref=ref_$SP
+
+echo ${!ref}
+
+
+
+$GATK --java-options "-Xmx15g -Xms10g" CombineGVCFs \
+	-R ${!ref} \
+	-O ${SP}.CITP.g.vcf \
+	$(echo $samples)
+
+$GATK --java-options "-Xmx15g -Xms10g" GenotypeGVCFs \
+	   -R ${!ref} \
+	    -V ${SP}.CITP.g.vcf \
+	    -O ${SP}.CITP.raw.all.vcf \
+	    --include-non-variant-sites \
+	    -G StandardAnnotation \
+	    --use-new-qual-calculator
+
+#get repetitive regions
+getmask="/projects/phillipslab/ateterina/scripts/generate_masked_ranges.py"
+
+echo ${!ref/genomic/genomic_masked}
+sed -E "s/ length=[0-9]+//g" ${!ref/genomic/genomic_masked} > ${!ref/genomic/genomic_masked2}
+
+/usr/bin/python2.7 -u $getmasked ${!ref/genomic/genomic_masked} > ${SP}.repeats.test.bed
+
+
+
+
+
+
+#select regions of good coverage
+
+module load easybuild  icc/2017.1.132-GCC-6.3.0-2.27  impi/2017.1.132 VCFtools/0.1.15-Perl-5.24.1
+
+awk '{print $1"\t"$2}' ${!ref}.fai > ${SP}_genome.txt
+
+vcftools --vcf ${SP}.CITP.raw.all.vcf  --max-missing 0.75 --minDP 3 --maxDP 300 --recode --stdout |grep -v "#" - | awk '{print $1"\t"$2-1"\t"$2}' - | bedtools merge -i - |bedtools subtract -a ${SP}_genome.txt -b - > ${SP}_region_with_bad_cov_0.75_3-300.bed
+#select indels
+$GATK --java-options "-Xmx15g -Xms10g" SelectVariants  \
+	    -R ${!ref} -V  ${SP}.CITP.raw.all.vcf --select-type-to-include INDEL  \
+		    -O  ${SP}.CITP.raw_indels.vcf
+
+#find HQ indels, the filter from https://gatk.broadinstitute.org/hc/en-us/articles/360035532412-Can-t-use-VQSR-on-non-model-organism-or-small-dataset
+$GATK --java-options "-Xmx15g -Xms10g" VariantFiltration  \
+	    -R ${!ref} -V ${SP}.CITP.raw_indels.vcf \
+	    --filter-name "basic_indel_filter" \
+	    --filter-expression 'QD < 2.0 || FS > 200.0 || ReadPosRankSum < -20.0 || SOR > 10.0' \
+	    -O ${SP}.CITP.filt_indels.vcf
+
+
+#create +/- 10 bp mask arind them (or 10??)
+grep "PASS" ${SP}.CITP.filt_indels.vcf |grep -v "#" - | awk '{print $1"\t"$2-1"\t"$2}' - |bedtools slop -i - -b 10 -g ${!ref}.fai > ${SP}_indel_mask.bed
+
+
+
+$GATK --java-options "-Xmx15g -Xms10g" VariantFiltration  -R ${!ref} -V ${SP}.CITP.raw.all.vcf --filter-expression ' QD < 2.0 || FS > 60.0 || MQ < 40.0 || MQRankSum < -12.5 || ReadPosRankSum < -8.0 || SOR > 3.0' --filter-name "basic_snp_filter" -O ${SP}.CITP.filt.snps.vcf
+
+grep -P "basic_snp_filter|LowQual" ${SP}.CITP.filt.snps.vcf | grep -v "#" - |awk '{print $1"\t"$2-1"\t"$2}' - > ${SP}.CITP.filt.snps.mask.bed
+
+$GATK --java-options "-Xmx15g -Xms10g" SelectVariants  \
+           -R ${!ref} -V  ${SP}.CITP.raw.all.vcf \
+		   --select-type-to-include MIXED --select-type-to-include MNP --select-type-to-include INDEL  \
+	       -O  ${SP}.CITP.raw.other.vcf
+
+
+
+grep -v "#" ${SP}.CITP.raw.other.vcf | awk '{print $1"\t"$2-1"\t"$2}' - >${SP}_mask_other.bed
+
+
+
+#combine masks
+
+cat ${SP}_indel_mask.bed ${SP}_mask_other.bed ${SP}.repeats.bed ${SP}_region_with_bad_cov_0.75_3-300.bed ${SP}.CITP.filt.snps.mask.bed >${SP}.combo.mask.0.75.3-300.bed
+
+
+bedtools subtract -a ${SP}.CITP.raw.all.vcf -b ${SP}.combo.mask.0.75.3-300.bed > ${SP}.CITP.filt.tmp.3-300.vcf
+grep "#" ${SP}.CITP.raw.all.vcf > ${SP}.CITP.filt.3-300.vcf
+cat ${SP}.CITP.filt.tmp.3-300.vcf >> ${SP}.CITP.filt.3-300.vcf
+
+
+
+vcftools --vcf ${SP}.CITP.filt.3-300.vcf --site-pi --out ${SP}.CITP.3-300
+
+grep -v "nan" ${SP}.CITP.3-300.sites.pi |awk '{ total += $3 } END { print total/NR }' -  > ${SP}.mean3-300.pi
+
+
+
+
+#find all notmasked regions
+bedtools makewindows -g ${SP}_genome.txt -w 100000 > ${SP}.windows.100kb.bed
+
+
+awk '{print $1"\t"$2-1"\t"$2"\t"$3}' ${SP}.CITP.3-300.sites.pi |grep -v "nan" - >${SP}.CITP.3-300.sites.pi.bed
+sed -i '1d' ${SP}.CITP.3-300.sites.pi.bed
+
+bedtools map -b ${SP}.CITP.3-300.sites.pi.bed -a ${SP}.windows.100kb.bed -c 4 -o mean > ${SP}_CITP.3-300_pi_100kb_FIN.bed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#http://alimanfoo.github.io/2017/06/14/read-vcf.html
+
+
+#filter indels
+#filter regions around indels
+
+#filter SNPs
+
+#get biallelic
+
+
+#scikit-allel
+
+#get only biallelic sites add oter sites 
+
+
+
+#get only biallelic sites
+#add all non-biallelic sites 
+
+
+#for file in N2.bam MY16.bam JU775.bam; do
+
+#		samtools depth -a $file	| awk '{ if ($3 < 10 || $3 > 500) { print $1 "\t" $2-1 "\t" $2 }}' - >> N2_MY16_JU775.DP10-500.mask.bed
+
+#	done
+
+	###create a mask
+
+#	samtools faidx $ref
+#	bedtools sort -faidx ${ref}.fai -i N2_MY16_JU775.DP10-500.mask.bed | bedtools merge -i - > N2_MY16_JU775.DP10-500.mask.s.bed
+
+
+
+
+
+
+#$GATK --java-options "-Xmx15g -Xms10g" CombineGVCFs \
+#	-R $ref_CB \
+#	-O CB.CITP.g.vcf \
+#	$(echo $samplesCB)
+
+#$GATK --java-options "-Xmx15g -Xms10g" CombineGVCFs \
+#	-R $ref_CT \
+#	-O CT.CITP.g.vcf \
+#	$(echo $samplesCT)
+
+
+#$GATK --java-options "-Xmx15g -Xms10g" GenotypeGVCFs \
+	#   -R $ref_CE \
+	#    -V CE.CITP.g.vcf \
+	#    -O CE.CITP.raw.all.vcf \
+	#    --include-non-variant-sites \
+	#    -G StandardAnnotation \
+	#    --use-new-qual-calculator
+
+#$GATK --java-options "-Xmx15g -Xms10g" GenotypeGVCFs \
+    #   -R $ref_CE \
+	#    -V CE.CITP.g.vcf \
+	#    -O CE.CITP.raw.all.vcf \
+	#    --include-non-variant-sites \
+	#    -G StandardAnnotation \
+	#    --use-new-qual-calculator
+
+#$GATK --java-options "-Xmx15g -Xms10g" GenotypeGVCFs \
+	    #   -R $ref_CT \
+		#    -V CT.CITP.g.vcf \
+		#    -O CT.CITP.raw.all.vcf \
+		#    --include-non-variant-sites \
+		#    -G StandardAnnotation \
+		#    --use-new-qual-calculator
+
+
+
+#$GATK --java-options "-Xmx15g -Xms10g" GenomicsDBImport -R $ref \
+#    --genomicsdb-workspace-path pop_database_${CHR} \
+#    --tmp-dir $tmp -L ${CHR} --reader-threads 5 \
+#     $(echo $samples);
+
+#$GATK --java-options "-Xmx15g -Xms10g" CombineGVCFs \
+#	    -R $ref_CE \
+#		   --variant sample1.g.vcf.gz \
+#		      --variant sample2.g.vcf.gz \
+#			     -O cohort.g.vcf.gz
+
+
+#           -R $ref \
+	#    -V gendb://pop_database_${CHR} \
+	#    -O CR_full_output.${CHR}.vcf \
+	#    --include-non-variant-sites \
+	#    -G StandardAnnotation \
+	#    --only-output-calls-starting-in-intervals \
+	#    --use-new-qual-calculator \
+	#    -L ${CHR}
+
+#$GATK --java-options "-Xmx15g -Xms10g" GenotypeGVCFs \
+#           -R $ref \
+#    -V gendb://pop_database_${CHR} \
+#    -O CR_full_output.${CHR}.vcf \
+#    --include-non-variant-sites \
+#    -G StandardAnnotation \
+#    --only-output-calls-starting-in-intervals \
+#    --use-new-qual-calculator \
+#    -L ${CHR}
+
+
+#$GATK --java-options "-Xmx15g -Xms10g" \
+#              GatherVcfs \
+#                -I CR_full_output.I.vcf \
+#                -I CR_full_output.II.vcf \
+#                -I CR_full_output.III.vcf \
+#                -I CR_full_output.IV.vcf \
+#                -I CR_full_output.V.vcf \
+#                -I CR_full_output.X.vcf \
+#              --OUTPUT CE_population_raw.vcf
+
+
+

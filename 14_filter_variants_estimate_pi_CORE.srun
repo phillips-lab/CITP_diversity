@@ -1,0 +1,98 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=GATK    ### Job Name
+#SBATCH --time=240:00:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-2          ### Array index
+#SBATCH --cpus-per-task=1            ### Number of CPU cores per task
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+
+module load java easybuild GATK bedtools
+
+ref_CE="/projects/phillipslab/ateterina/CITP_pi/ref/c_elegans.PRJNA13758.WS280.genomic.fa"
+ref_CB="/projects/phillipslab/ateterina/CITP_pi/ref/c_briggsae.PRJNA10731.WS280.genomic.fa"
+ref_CT="/projects/phillipslab/ateterina/CITP_pi/ref/c_tropicalis.PRJNA53597.WS280.genomic.fa"
+
+GATK="/projects/phillipslab/ateterina/scripts/gatk-4.1.4.1/gatk"
+cd /projects/phillipslab/ateterina/CITP_pi/data/
+
+
+
+#consolidate variants from many samples
+LIST=(CE CB CT)
+SP=${LIST[$SLURM_ARRAY_TASK_ID]}
+
+ref=ref_$SP
+
+cut -f 1-12 CB.CITP.raw.all.vcf > CB.CITP.raw.core.vcf
+cut -f 1-9,14-16 CE.CITP.raw.all.vcf > CE.CITP.raw.core.vcf
+cut -f 1-11,14 CT.CITP.raw.all.vcf > CT.CITP.raw.core.vcf
+
+
+
+
+#select regions of good coverage
+
+module load easybuild  icc/2017.1.132-GCC-6.3.0-2.27  impi/2017.1.132 VCFtools/0.1.15-Perl-5.24.1
+
+
+vcftools --vcf ${SP}.CITP.raw.core.vcf  --max-missing 0.75 --minDP 3 --maxDP 300 --recode --stdout |grep -v "#" - | awk '{print $1"\t"$2-1"\t"$2}' - | bedtools merge -i - |bedtools subtract -a ${SP}_genome.txt -b - > ${SP}_region_with_bad_cov_0.75_3-300.core.bed
+#select indels
+$GATK --java-options "-Xmx15g -Xms10g" SelectVariants  -R ${!ref} -V  ${SP}.CITP.raw.core.vcf --select-type-to-include INDEL  -O  ${SP}.CITP.raw_indels.core.vcf
+
+#find HQ indels, the filter from https://gatk.broadinstitute.org/hc/en-us/articles/360035532412-Can-t-use-VQSR-on-non-model-organism-or-small-dataset
+$GATK --java-options "-Xmx15g -Xms10g" VariantFiltration  \
+	    -R ${!ref} -V ${SP}.CITP.raw_indels.core.vcf \
+		    --filter-name "basic_indel_filter" \
+			    --filter-expression 'QD < 2.0 || FS > 200.0 || ReadPosRankSum < -20.0 || SOR > 10.0' -O ${SP}.CITP.filt_indels.core.vcf
+
+
+#create +/- 10 bp mask arind them (or 10??)
+grep "PASS" ${SP}.CITP.filt_indels.core.vcf |grep -v "#" - | awk '{print $1"\t"$2-1"\t"$2}' - |bedtools slop -i - -b 10 -g ${!ref}.fai > ${SP}_indel_mask.core.bed
+
+$GATK --java-options "-Xmx15g -Xms10g" VariantFiltration  -R ${!ref} -V ${SP}.CITP.raw.core.vcf --filter-expression ' QD < 2.0 || FS > 60.0 || MQ < 40.0 || MQRankSum < -12.5 || ReadPosRankSum < -8.0 || SOR > 3.0' --filter-name "basic_snp_filter" -O ${SP}.CITP.filt.snps.core.vcf
+
+grep -P "basic_snp_filter|LowQual" ${SP}.CITP.filt.snps.core.vcf | grep -v "#" - | awk '{print $1"\t"$2-1"\t"$2}' - > ${SP}.CITP.filt.snps.mask.core.bed
+
+$GATK --java-options "-Xmx15g -Xms10g" SelectVariants  \
+          -R ${!ref} -V  ${SP}.CITP.raw.core.vcf \
+            --select-type-to-include MIXED --select-type-to-include MNP --select-type-to-include INDEL  \
+          -O  ${SP}.CITP.raw.other.core.vcf
+
+
+
+grep -v "#" ${SP}.CITP.raw.other.core.vcf | awk '{print $1"\t"$2-1"\t"$2}' - >${SP}_mask_other.core.bed
+
+
+
+#combine 
+
+cat ${SP}_indel_mask.core.bed ${SP}_mask_other.core.bed ${SP}.repeats.bed ${SP}_region_with_bad_cov_0.75_3-300.core.bed ${SP}.CITP.filt.snps.mask.core.bed >${SP}.combo.mask.core.bed
+
+
+
+bedtools subtract -a ${SP}.CITP.raw.core.vcf -b ${SP}.combo.mask.core.bed > ${SP}.CITP.filt.tmp.core.vcf
+
+grep "#" ${SP}.CITP.raw.core.vcf > ${SP}.CITP.filt.core.vcf
+cat ${SP}.CITP.filt.tmp.core.vcf >> ${SP}.CITP.filt.core.vcf
+
+
+
+
+vcftools --vcf ${SP}.CITP.filt.core.vcf --site-pi --out ${SP}.CITP.core
+
+grep -v "nan" ${SP}.CITP.core.sites.pi |awk '{ total += $3 } END { print total/NR }' -  > ${SP}.mean.core.pi
+
+
+
+
+awk '{print $1"\t"$2-1"\t"$2"\t"$3}' ${SP}.CITP.core.sites.pi |grep -v "nan" - >${SP}.CITP.core.sites.pi.bed
+sed -i '1d' ${SP}.CITP.core.sites.pi.bed
+bedtools map -b ${SP}.CITP.core.sites.pi.bed -a ${SP}.windows.100kb.bed -c 4 -o mean > ${SP}_CITP.core_pi_100kb_FIN.bed
+
+
+

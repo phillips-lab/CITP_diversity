@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=GATK    ### Job Name
+#SBATCH --time=240:00:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-2          ### Array index
+#SBATCH --cpus-per-task=1            ### Number of CPU cores per task
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+
+cd /projects/phillipslab/ateterina/CITP_pi/data/
+
+
+
+LIST=(CE CB CT)
+SP=${LIST[$SLURM_ARRAY_TASK_ID]}
+
+
+
+source ~/.bashrc
+conda activate popvae
+
+
+popvae.py --infile ${SP}.CITP.filt.3-300.vcf --out ./${SP}_popvae_FIN --seed 42
+
+
+

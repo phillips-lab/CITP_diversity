@@ -1,0 +1,15 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=qc    ### Job Name
+#SBATCH --time=00:240:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-89           ### Array index
+
+module load fastqc
+LISTFILES=(/projects/phillipslab/ateterina/CITP_pi/data/*.fastq) 
+mkdir -p fastqc_raw
+fastqc ${LISTFILES[$SLURM_ARRAY_TASK_ID]} -o fastqc_raw &> ${LISTFILES[$SLURM_ARRAY_TASK_ID]}.log
+
+

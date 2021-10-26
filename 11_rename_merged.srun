@@ -1,0 +1,28 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=rename    ### Job Name
+#SBATCH --time=10:00:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-9           ### Array index
+#SBATCH --cpus-per-task=1            ### Number of CPU cores per task
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+module load java samtools
+picard="/projects/phillipslab/ateterina/scripts/picard/build/libs/picard.jar"
+
+cd /projects/phillipslab/ateterina/CITP_pi/data/
+
+
+LISTFILES=(*M.ded.bam) 
+file=${LISTFILES[$SLURM_ARRAY_TASK_ID]}
+
+
+
+
+java -Xmx4g -jar $picard AddOrReplaceReadGroups I=${file} O=${file/.M.ded.bam/.ded.bam} RGPL=illumina RGLB=${file/.M.ded.bam/} RGPU=NONE RGSM=${file/.M.ded.bam/};
+
+samtools index ${file/.M.ded.bam/.ded.bam};
+
+mv $file trash/

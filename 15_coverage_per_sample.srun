@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=cov    ### Job Name
+#SBATCH --time=240:00:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-20          ### Array index
+#SBATCH --cpus-per-task=1            ### Number of CPU cores per task
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+
+module load samtools
+
+cd /projects/phillipslab/ateterina/CITP_pi/data/
+
+
+
+LISTFILES=(*ded.bam) 
+file=${LISTFILES[$SLURM_ARRAY_TASK_ID]}
+
+
+samtools depth -a ${file} | awk '{sum+=$3} END { print "Average = ",sum/NR; }' > ${file/.ded.bam/.mean_cov_sample};

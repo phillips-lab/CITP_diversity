@@ -1,0 +1,83 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=merge    ### Job Name
+#SBATCH --time=00:300:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0           ### Array index
+#SBATCH --cpus-per-task=1            ### Number of CPU cores per task
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+module load java samtools
+picard="/projects/phillipslab/ateterina/scripts/picard/build/libs/picard.jar"
+
+cd /projects/phillipslab/ateterina/CITP_pi/data/
+
+
+
+mkdir -p trash
+
+#5
+for i in CE_CB4856.5.ded.bam CE_ED3040.5.ded.bam;do
+
+java -Xmx4g -jar $picard MergeSamFiles SORT_ORDER=coordinate ASSUME_SORTED=true \
+	    I=${i/.5./.1.} \
+		I=${i/.5./.2.} \
+		I=${i/.5./.3.} \
+		I=${i/.5./.4.} \
+		I=${i} \
+		O=${i/.5./.M.};
+
+mv ${i/.5./.1.} trash/
+mv ${i/.5./.2.} trash/
+mv ${i/.5./.3.} trash/
+mv ${i/.5./.4.} trash/
+mv ${i} trash/
+
+done
+
+#4
+for i in CE_JU775.4.ded.bam CE_QX1211.4.ded.bam CE_MY16.4.ded.bam;do
+java -Xmx4g -jar $picard MergeSamFiles SORT_ORDER=coordinate ASSUME_SORTED=true \
+	        I=${i/.4./.1.} \
+			I=${i/.4./.2.} \
+			I=${i/.4./.3.} \
+			I=${i} \
+			O=${i/.4./.M.};
+
+mv ${i/.4./.1.} trash/
+mv ${i/.4./.2.} trash/
+mv ${i/.4./.3.} trash/
+mv ${i} trash/
+
+  
+done
+  #3
+for i in CB_HK104.3.ded.bam CE_JU1652.3.ded.bam CE_JU1088.3.ded.bam;do
+
+java -Xmx4g -jar $picard MergeSamFiles SORT_ORDER=coordinate ASSUME_SORTED=true \
+	        I=${i/.3./.1.} \
+			I=${i/.3./.2.} \
+			I=${i} \
+			O=${i/.3./.M.};
+
+mv ${i/.3./.1.} trash/
+mv ${i/.3./.2.} trash/
+mv ${i} trash/
+
+done
+
+  #2
+for i in CT_NIC58.2.ded.bam CT_JU1373.2.ded.bam;do
+
+java -Xmx4g -jar $picard MergeSamFiles SORT_ORDER=coordinate ASSUME_SORTED=true \
+	            I=${i/.2./.1.} \
+				I=${i} \
+				O=${i/.2./.M.};
+
+mv ${i/.2./.1.} trash/
+mv ${i} trash/
+
+done
+

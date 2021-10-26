@@ -1,0 +1,52 @@
+#!/bin/bash
+#SBATCH -A phillipslab
+#SBATCH --partition=phillips       ### Partition
+#SBATCH --job-name=map    ### Job Name
+#SBATCH --time=10:00:00        ### WallTime
+#SBATCH --nodes=1              ### Number of Nodes
+#SBATCH --ntasks=1             ### Number of tasks per array job
+#SBATCH --array=0-43           ### Array index
+#SBATCH --cpus-per-task=10            ### Number of CPU cores per task	
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+module load bwa samtools
+
+ref_CE="/projects/phillipslab/ateterina/CITP_pi/ref/c_elegans.PRJNA13758.WS280.genomic.fa"
+ref_CB="/projects/phillipslab/ateterina/CITP_pi/ref/c_briggsae.PRJNA10731.WS280.genomic.fa"
+ref_CT="/projects/phillipslab/ateterina/CITP_pi/ref/c_tropicalis.PRJNA53597.WS280.genomic.fa"
+
+#index the references
+
+cd /projects/phillipslab/ateterina/CITP_pi/data/
+
+LISTFILES=(*_fp1.fastq)
+file=${LISTFILES[$SLURM_ARRAY_TASK_ID]}
+name=${file/_fp1.fastq/}
+
+echo $file;
+
+if [[ "$name" =~ "CE".* ]]; then
+	
+	echo "C. elegans"
+	bwa mem -M -t 10 -R "@RG\tID:$name\tSM:$name\tPL:Illumina\tPI:330" $ref_CE $file ${file/_fp1./_fp2.} > ${file/_fp1.fastq/.sam} 2>${file/_fp1.fastq/.bwa.log}
+
+elif [[ "$name" =~ "CB".* ]]; then
+	
+	echo "C. briggsae"
+	bwa mem -M -t 10 -R "@RG\tID:$name\tSM:$name\tPL:Illumina\tPI:330" $ref_CB $file ${file/_fp1./_fp2.} > ${file/_fp1.fastq/.sam} 2>${file/_fp1.fastq/.bwa.log}
+
+else
+	
+	echo "C. tropicalis"
+	bwa mem -M -t 10 -R "@RG\tID:$name\tSM:$name\tPL:Illumina\tPI:330" $ref_CT $file ${file/_fp1./_fp2.} > ${file/_fp1.fastq/.sam} 2>${file/_fp1.fastq/.bwa.log}
+
+fi
+
+
+
+samtools view -@ 9 -F 4 -bS -q 20 ${file/_fp1.fastq/.sam} | samtools sort -@ 10 -o ${file/_fp1.fastq/.s.bam} -
+
+samtools index ${file/_fp1.fastq/.s.bam};
+samtools depth -a ${file/_fp1.fastq/.s.bam} | awk '{sum+=$3} END { print "Average = ",sum/NR; }' > ${file/_fp1.fastq/.cov_mean};
+ 
+
